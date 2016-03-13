@@ -1,0 +1,83 @@
+---
+title: "knitr, pandoc, docx and EMF image size issues"
+output:
+  word_document
+---
+
+2016-03-13 Ralf Herold
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(echo=TRUE, wrapper=TRUE)
+
+# to automatically switch graphics formats subsequently by rendering formats, use
+# if (knitr::opts_knit$get('rmarkdown.pandoc.to') == 'docx') knitr::opts_chunk$set(dev='emf', fig.ext='emf', fig.width=7, fig.height=7 * 2 / 3)
+# if (knitr::opts_knit$get('rmarkdown.pandoc.to') == 'docx') knitr::opts_chunk$set(dev='pdf', fig.width=7, fig.height=7 * 2 / 3)
+# if (knitr::opts_knit$get('rmarkdown.pandoc.to') == 'html') knitr::opts_chunk$set(dev='svg')
+
+library(devEMF)
+# emf(file="Rplot.emf", width=7, height=7,
+#     bg="transparent", fg="black", pointsize=12,
+#     family="Helvetica", custom.lty=FALSE)
+
+# wrapper to show chunk settings as per: 
+# http://rmarkdown.rstudio.com/articles_verbatim2.html
+
+knitr::knit_hooks$set(source=function(x, options){
+  if (!is.null(options$verbatim) && options$verbatim){
+    opts=gsub(",\\s*verbatim\\s*=\\s*TRUE\\s*", "", options$params.src)
+    bef=sprintf('\n\n    ```{r %s}\n', opts, "\n")
+    stringr::str_c(
+      bef, 
+      knitr:::indent_block(paste(x, collapse='\n'), "    "), 
+      "\n    ```\n"
+    )
+  } else {
+    stringr::str_c("\n\n```", tolower(options$engine), "\n", 
+      paste(x, collapse='\n'), "\n```\n\n"
+    )
+  }
+})
+
+knitr::knit_hooks$set(wrapper=function(before, options, envir) {
+  if (before) {
+    sprintf('    ```{r %s}\n', options$params.src)
+  } else '    ```\n'
+})
+
+library(ggplot2)
+```
+
+# EMF
+
+The size of EMF graphics cannot currently be determined by pandoc (see [issue 2720](https://github.com/jgm/pandoc/issues/2720)). The pandoc renderer defaults back to an image of size 300 px width by 200 px height and 72 dpi resolution. This is based on "instance Default ImageSize where def=ImageSize 300 200 72 72", which can be found [here](https://github.com/jgm/pandoc/blob/master/src/Text/Pandoc/ImageSize.hs#L92). 
+
+It is reasonable to use EMF in docx as it works in all installations by default. In [R](https://www.r-project.org/), currently [devEMF](http://cran.at.r-project.org/web/packages/devEMF/index.html) can be used to generate EMF graphics. Here is a simple and practical work around. 
+
+An EMF graphic appears at 139% scaling in Word, which seems related to a dpi of 100 (as 100/72 is about 139). However, changing the dpi parameter has no effect on the graphic. Note both dev= and fig.ext= are necessary to knit EMF graphics. It is *not* possible change the size of the graphic that is shown in Word. Nevertheless, the graphic content can be scaled so that it appears more similar to standard figures by adapting fig.width and fig.height (otherwise, knitr uses 7 inches for both; fig.width=7 still needs to be specified to avoid a distorted the aspect ratio being shown in Word):
+
+```{r f_emf_7inch, dev='emf', fig.ext='emf', fig.width=7, fig.height=7*2/3}
+# note parameters could be set for all chunks as follows:
+# if (knitr::opts_knit$get('rmarkdown.pandoc.to') == 'docx') 
+#  knitr::opts_chunk$set(dev='emf', fig.ext='emf',  
+#                        fig.width=7, fig.height=7 * 2 / 3)
+ggplot(mpg, aes(class)) + geom_bar()
+```
+
+# Other graphic formats
+
+This is a postscript graphic. In Word, the a bitmap preview or no preview may be shown (depends on filter installation and Word version), but when rendering into a PDF, the vector graphic is included. It seems that pandoc cannot determine PDF graphic size, hence the *parameters are necessary* to avoid distorting the aspect ratio:
+
+```{r figure_pdf, dev='pdf', fig.width=7, fig.height=7*2/3}
+ggplot(mpg, aes(class)) + geom_bar()
+```
+
+This is a PNG graphic, the default: 
+
+```{r figure_png}
+ggplot(mpg, aes(class)) + geom_bar()
+```
+
+# Note
+
+A solution has been suggested by editing the docx file in order to correct image sizes (could be applied to EMF and to PDF graphics): 
+ [Figure sizes with pandoc conversion from markdown to docx](http://stackoverflow.com/a/17757873). If you consider this suggestion, you may wish to hook this into the knitting operation. 
